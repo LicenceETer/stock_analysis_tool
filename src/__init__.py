@@ -1,0 +1,1 @@
+"""A-Share MCP Agent package."""
