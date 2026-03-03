@@ -275,36 +275,81 @@ def _generate_final_recommendation(analysis_result: Dict[str, Any]) -> Dict[str,
 
 def _calculate_price_targets(current_price: float, tech_indicators: Dict[str, Any], 
                           recommendation: str) -> Dict[str, Any]:
-    """Calculate price targets based on recommendation."""
+    """Calculate price targets based on recommendation with dynamic support/resistance logic.
+    
+    Key fix: When current price is below historical support levels, adjust buy zone dynamically
+    to reflect that current price is already in a better buying position.
+    """
     ma5 = tech_indicators['ma5']
     ma20 = tech_indicators['ma20']
     ma30 = tech_indicators['ma30']
     
+    # Calculate base support and resistance levels
+    base_support = min(ma20, ma30)
+    base_resistance = ma5
+    
+    # Apply dynamic logic: if current price is below base support, it's already in buy zone
+    if current_price < base_support:
+        # Current price is already below historical support - this is a better buying opportunity
+        # Set dynamic support slightly below current price for safety buffer
+        dynamic_support = current_price * 0.99  # 1% buffer below current price
+        actual_support = min(dynamic_support, base_support)
+        # Resistance remains the same (MA5 or current price, whichever is higher)
+        actual_resistance = max(base_resistance, current_price)
+    else:
+        actual_support = base_support
+        actual_resistance = max(base_resistance, current_price)
+    
     if recommendation in ['强烈买入', '买入']:
-        # Bullish targets
-        target_price = ma5 + (ma5 - current_price) * 1.5
+        # Bullish targets - correct calculation with dynamic logic
+        if current_price > ma5:
+            # Price above MA5, target should be higher
+            target_price = current_price + (current_price - ma5) * 1.5
+        else:
+            # Price below MA5, but may be below historical support (better buying opportunity)
+            if current_price < base_support:
+                # Current price is already in optimal buy zone, set conservative target
+                target_price = current_price + abs(current_price - ma5) * 0.8
+            else:
+                # Price below MA5 but above support, normal calculation
+                target_price = ma5 + (ma5 - current_price) * 0.5
+                
         stop_loss = current_price * 0.95
         return {
             'target_price': round(target_price, 2),
             'stop_loss': round(stop_loss, 2),
-            'support_level': round(min(ma20, ma30), 2),
-            'resistance_level': round(ma5, 2)
+            'support_level': round(actual_support, 2),
+            'resistance_level': round(actual_resistance, 2),
+            'buy_zone_lower': round(actual_support, 2),
+            'buy_zone_upper': round(actual_resistance, 2),
+            'current_in_buy_zone': current_price <= actual_resistance
         }
     elif recommendation in ['强烈卖出', '卖出']:
-        # Bearish targets
-        support_level = min(ma20, ma30)
-        resistance_level = ma5
+        # Bearish targets with dynamic support
+        if current_price < ma5:
+            # Price below MA5, target should be lower
+            target_price = current_price - (ma5 - current_price) * 1.5
+        else:
+            # Price above MA5, target is MA5 minus some buffer
+            target_price = ma5 - (current_price - ma5) * 0.5
+            
         return {
-            'support_level': round(support_level, 2),
-            'resistance_level': round(resistance_level, 2),
-            'target_price': None,
-            'stop_loss': None
+            'support_level': round(actual_support, 2),
+            'resistance_level': round(actual_resistance, 2),
+            'target_price': round(target_price, 2) if 'target_price' in locals() else None,
+            'stop_loss': None,
+            'buy_zone_lower': round(actual_support, 2),
+            'buy_zone_upper': round(actual_resistance, 2),
+            'current_in_buy_zone': current_price <= actual_resistance
         }
     else:
-        # Neutral
+        # Neutral - provide dynamic buy zone info
         return {
-            'support_level': round(ma30, 2),
-            'resistance_level': round(ma5, 2),
+            'support_level': round(actual_support, 2),
+            'resistance_level': round(actual_resistance, 2),
             'target_price': None,
-            'stop_loss': None
+            'stop_loss': None,
+            'buy_zone_lower': round(actual_support, 2),
+            'buy_zone_upper': round(actual_resistance, 2),
+            'current_in_buy_zone': current_price <= actual_resistance
         }
